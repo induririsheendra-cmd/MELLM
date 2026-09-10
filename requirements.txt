@@ -1,0 +1,16 @@
+llama-cpp-python>=0.2.90
+huggingface_hub>=0.22.0
+pyyaml>=6.0
+rich>=13.0.0
+fastapi>=0.110.0
+uvicorn>=0.29.0
+python-dotenv>=1.0.0
+torch
+psutil
+setuptools
+requests>=2.31.0
+python-multipart
+
+pypdf
+chromadb
+sentence-transformers
