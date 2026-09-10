@@ -104,13 +104,15 @@ Most open-source routers use keyword matching or fine-tuned classifiers. MELLM u
 ### Key Features
 
 - 🔀 **Intelligent Routing** — A 1.5B router classifies queries into 5 domains with >90% accuracy and rewrites prompts for optimal specialist output
+- 👁️ **Vision Specialist** — Uses Moondream2 to understand and describe images uploaded by the user
+- 🔍 **Smart OCR Routing** — Automatically extracts text from screenshots (like Leetcode problems) and routes them to text-based experts instead of the Vision specialist
 - 🧩 **Multi-Agent Composition** — Cross-domain queries are automatically decomposed, each part routed to the right specialist, and merged into one response
 - 🧬 **Domain Specialists** — Fine-tuned models for medical, legal, math, code, and general knowledge — each optimised for its task
-- ⚡ **Persistent Router** — Router stays resident in VRAM; zero routing overhead after startup
+- ⚡ **Persistent Router** — Router stays resident in VRAM/RAM; zero routing overhead after startup
 - 🔥 **Hot Specialist Cache** — Active specialist stays loaded between same-domain queries; only swapped on domain switch
-- 🧠 **Conversation Context** — 3-turn history window so follow-up queries like "Now in Python?" work correctly
+- 🧠 **Conversation Context & Memory Toggle** — 3-turn history window. Users can dynamically toggle memory on/off per query for massive speed boosts when context isn't needed
 - 🎯 **Domain Continuity** — Short follow-ups inherit the current domain automatically
-- 🖥️ **Interactive Setup Wizard** — Hardware-aware onboarding detects your GPU and recommends appropriate model sizes
+- 🖥️ **Interactive Setup Wizard** — Hardware-aware onboarding detects your GPU (or lack thereof) and recommends appropriate model sizes
 - 🌐 **REST API** — FastAPI endpoint so any app can use MELLM as a backend
 - ⬇️ **Auto-Download** — Models download from Hugging Face on first use, cached locally
 
@@ -169,8 +171,9 @@ All models use the **GGUF** quantized format for efficient inference via `llama-
 | Specialist | **Medical** | BioMistral-7B-DARE | `ggml-model-Q2_K.gguf` | ~2.3 GB | 1024 |
 | Specialist | **Legal** | Magistrate-3.2-3B-IT | `magistrate-3.2-3b-it.Q4_K_M.gguf` | ~1.8 GB | 1024 |
 | Specialist | **General** | Qwen2.5-1.5B-Instruct | `qwen2.5-1.5b-instruct-q4_k_m.gguf` | ~1.1 GB | 4096 |
+| Specialist | **Vision** | Moondream2 | `moondream2-text-model-f16.gguf` + `mmproj` | ~1.5 GB | 2048 |
 
-> **Note:** Larger models (7B+) automatically use a reduced context window (1024 tokens) to stay within 6GB VRAM limits. Smaller models (≤1.5B) use the full 4096 context.
+> **Note:** GPU users automatically receive the "best versions" (high-parameter models leveraging CUDA acceleration), while CPU-only users are given the "most efficient versions" (highly quantized `Q4_K_M` variants) to maintain reasonable inference speeds without a dedicated graphics card.
 
 ---
 
@@ -245,19 +248,26 @@ python -m venv .venv
 source .venv/bin/activate
 ```
 
-#### 3. Install llama-cpp-python (with CUDA) + Remaining Dependencies
+#### 3. Install Dependencies (GPU vs CPU)
 
-Use the provided setup script — it auto-detects your CUDA version, installs the matching pre-built wheel, and falls back to a source build if the wheel is incompatible with your toolkit:
+**If you have an NVIDIA GPU:**
+You get the best, uncompromised models utilizing full CUDA acceleration. Use the provided setup script — it auto-detects your CUDA version, installs the matching pre-built wheel, and falls back to a source build if the wheel is incompatible with your toolkit:
 
 ```bash
 chmod +x setup.sh && ./setup.sh
 ```
 
-> **Why not just `pip install llama-cpp-python`?**
-> Pre-built CUDA wheels are compiled for a specific CUDA minor version (e.g. `cu121`). Installing the wrong wheel causes a silent `SIGILL` crash the first time a model is loaded — not at import time. The setup script detects your toolkit version, picks the nearest known wheel, verifies it actually loads without crashing, and falls back to a source build if needed.
+**If you do NOT have a GPU (CPU-Only):**
+You get the most efficient, highly-quantized models specifically optimized to run fast on laptop CPUs without graphics cards. You don't need CUDA compilation. Simply install via pip:
+
+```bash
+pip install -r requirements.txt
+# For pure CPU llama-cpp-python:
+pip install llama-cpp-python --no-cache-dir
+```
 
 <details>
-<summary>Manual install (advanced)</summary>
+<summary>Manual GPU install (advanced)</summary>
 
 If you prefer to install manually, match the wheel tag to your CUDA version (`nvcc --version`):
 
@@ -272,14 +282,12 @@ pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-c
 CMAKE_ARGS="-DGGML_CUDA=on" pip install llama-cpp-python --no-cache-dir
 ```
 
-Verify the wheel actually works (import alone is not sufficient — CUDA code only runs on model load):
-
+Verify the wheel actually works:
 ```bash
 python -c "import llama_cpp; print('llama-cpp-python', llama_cpp.__version__, 'OK')"
 ```
 
 Then install the rest of the dependencies:
-
 ```bash
 pip install -r requirements.txt
 ```
