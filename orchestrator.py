@@ -352,13 +352,13 @@ class LLMRouter:
     def _enrich_prompt_with_memory(self, user_prompt: str) -> str:
         """Injects long-term memory and document context into the prompt."""
         retrieved_memories = self.memory.retrieve_memory(user_prompt, top_k=2)
-        retrieved_docs = self.memory.retrieve_document_context(user_prompt, top_k=2)
+        retrieved_docs = self.memory.retrieve_document_context(user_prompt, top_k=10)
         
         context_str = ""
         if retrieved_memories:
             context_str += "[Relevant Long-Term Memories]:\n" + "\n".join(f"- {m}" for m in retrieved_memories) + "\n\n"
         if retrieved_docs:
-            context_str += "[Relevant Document Context]:\n" + "\n".join(f"- {d}" for d in retrieved_docs) + "\n\n"
+            context_str += "[Uploaded Document Excerpts]:\n" + "\n".join(f"- {d}" for d in retrieved_docs) + "\n\n"
             
         if context_str:
             return f"{context_str}[User Prompt]:\n{user_prompt}"
@@ -372,34 +372,47 @@ class LLMRouter:
             self.memory.save_memory(text)
         threading.Thread(target=_save, daemon=True).start()
 
-    def stream_query(self, user_prompt: str, image_data: str = None) -> Generator[dict, None, None]:
+    def stream_query(self, user_prompt: str, image_data: str = None, enable_memory: bool = True, force_domain: str = None) -> Generator[dict, None, None]:
         """
         Streaming version of query(). 
         Yields event dictionaries: 'routing', 'loaded', 'token' (multiple), 'done'.
         """
         self.session_stats["total_queries"] += 1
 
-        # Smart default if no text prompt is provided with an image
-        if image_data and not user_prompt.strip():
+        # If a domain is forced, bypass all routing logic
+        if force_domain:
+            logger.info(f"Forcing domain to: {force_domain}")
+            yield from self._stream_single_agent(user_prompt, image_data=image_data, force_domain=force_domain, enable_memory=enable_memory)
+            return
+
+        # Smart default if an image is provided
+        if image_data:
             ocr_text = self._process_image_ocr(image_data)
             clean_ocr = ocr_text.replace("[Text Extracted from Image via OCR]:\n", "").strip()
             
-            # If the image is dense with text (like a LeetCode screenshot), assume they want it solved/explained
-            if len(clean_ocr) > 50:
-                logger.info("Empty prompt but dense text found in image. Assuming text-based query.")
-                user_prompt = "Please explain or solve this:\n" + clean_ocr
+            # If no prompt, decide based on text density
+            if not user_prompt.strip():
+                if len(clean_ocr) > 50:
+                    logger.info("Empty prompt but dense text found in image. Assuming text-based query.")
+                    user_prompt = "Please explain or solve this:\n" + clean_ocr
+                else:
+                    logger.info("Empty prompt and no text in image. Defaulting to vision describer.")
+                    yield from self._stream_single_agent(user_prompt, image_data=image_data, force_domain="vision", enable_memory=enable_memory)
+                    return
             else:
-                # If it's just a picture without much text (like a bridge), force the vision describer
-                logger.info("Empty prompt and no text in image. Defaulting to vision describer.")
-                yield from self._stream_single_agent(user_prompt, image_data=image_data, force_domain="vision")
-                return
+                # If there IS a prompt, but the image has no text, text-only models won't be able to "see" it via OCR.
+                # We must force the vision model to look at the picture.
+                if len(clean_ocr) < 20:
+                    logger.info("Prompt provided, but image has no text. Forcing vision domain so it can actually see the image.")
+                    yield from self._stream_single_agent(user_prompt, image_data=image_data, force_domain="vision", enable_memory=enable_memory)
+                    return
 
         if is_multi_domain(user_prompt):
-            yield from self._stream_multi_agent(user_prompt)
+            yield from self._stream_multi_agent(user_prompt, enable_memory=enable_memory)
         else:
-            yield from self._stream_single_agent(user_prompt, image_data=image_data)
+            yield from self._stream_single_agent(user_prompt, image_data=image_data, enable_memory=enable_memory)
 
-    def _stream_multi_agent(self, user_prompt: str) -> Generator[dict, None, None]:
+    def _stream_multi_agent(self, user_prompt: str, enable_memory: bool = True) -> Generator[dict, None, None]:
         """Handles multi-domain queries by decomposing into parallel specialist tasks."""
         yield {"type": "routing", "domain": "MULTI-AGENT",
                "rewritten_prompt": "[Multi-agent composition]",
@@ -489,7 +502,7 @@ class LLMRouter:
             "sub_results": all_sub_results
         }
 
-    def _stream_single_agent(self, user_prompt: str, image_data: str = None, force_domain: str = None) -> Generator[dict, None, None]:
+    def _stream_single_agent(self, user_prompt: str, image_data: str = None, force_domain: str = None, enable_memory: bool = True) -> Generator[dict, None, None]:
         """Standard single-domain query streaming pipeline."""
         
         if force_domain:
@@ -547,7 +560,7 @@ class LLMRouter:
         
         # Enrich the specialist prompt with RAG memory AFTER routing to save router tokens
         # Skip memory for vision to prevent Moondream2 context overflow (it only has a small context window)
-        if domain != "vision":
+        if enable_memory and domain != "vision":
             specialist_prompt = self._enrich_prompt_with_memory(specialist_prompt)
             
         full_response = ""
@@ -589,7 +602,7 @@ class LLMRouter:
         }
 
 
-    def query(self, user_prompt: str, image_data: str = None) -> dict:
+    def query(self, user_prompt: str, image_data: str = None, enable_memory: bool = True, force_domain: str = None) -> dict:
         """
         Executes query pipeline:
           - Multi-domain? → Composer decomposes, routes, and merges.
@@ -598,32 +611,40 @@ class LLMRouter:
         if image_data:
             user_prompt = self._process_image_ocr(user_prompt, image_data)
 
-        enriched_prompt = self._enrich_prompt_with_memory(user_prompt)
+        enriched_prompt = user_prompt
+        if enable_memory:
+            enriched_prompt = self._enrich_prompt_with_memory(user_prompt)
 
-        # Check for multi-domain composition FIRST
-        if is_multi_domain(user_prompt):
+        # Check for multi-domain composition FIRST if not forcing domain
+        if not force_domain and is_multi_domain(user_prompt):
             return self._run_multi_agent(enriched_prompt)
 
         logger.info(f"Processing query: {user_prompt[:50]}...")
         self.session_stats["total_queries"] += 1
 
-        # 1. Build contextual prompt for routing (includes conversation history)
-        contextual_prompt = self._build_contextual_prompt(enriched_prompt)
-    
-        # 2. Classify using persistent router
-        decision = self.router_logic.classify(self.router_model, None, contextual_prompt)
-    
-        # 3. Extract decision metadata
-        domain = decision["domain"]
-        confidence = decision["confidence"]
-        rewritten_prompt = decision["rewritten_prompt"]
-    
-        # Apply domain continuity bias for short follow-ups
-        domain = self._apply_domain_continuity(domain, user_prompt)
-    
-        if confidence < 0.6:
-            domain = "general"
-            rewritten_prompt = self.optimizer.optimize(domain, user_prompt)
+        if force_domain:
+            domain = force_domain
+            confidence = 1.0
+            rewritten_prompt = user_prompt
+            logger.info(f"Domain forced to: {domain}")
+        else:
+            # 1. Build contextual prompt for routing (includes conversation history)
+            contextual_prompt = self._build_contextual_prompt(enriched_prompt)
+        
+            # 2. Classify using persistent router
+            decision = self.router_logic.classify(self.router_model, None, contextual_prompt)
+        
+            # 3. Extract decision metadata
+            domain = decision["domain"]
+            confidence = decision["confidence"]
+            rewritten_prompt = decision["rewritten_prompt"]
+        
+            # Apply domain continuity bias for short follow-ups
+            domain = self._apply_domain_continuity(domain, user_prompt)
+        
+            if confidence < 0.6:
+                domain = "general"
+                rewritten_prompt = self.optimizer.optimize(domain, user_prompt)
 
         # 4. Update domain streak (display-only)
         self.domain_streak.append(domain)

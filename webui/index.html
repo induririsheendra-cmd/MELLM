@@ -4,20 +4,24 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MELLM — Multi-Expert LLM Router</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
     <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
     <style>
         :root {
-            --bg-main: #1a1a1a;
-            --bg-sidebar: #141414;
-            --bg-bubble: #2a2a2a;
-            --accent: #00bcd4;
-            --text-primary: #e0e0e0;
-            --text-dim: #999;
-            --border: #333;
-            --user-bubble: #005a64;
+            --bg-main: #0f1115;
+            --bg-sidebar: #15181e;
+            --bg-bubble: #1e2128;
+            --accent: #3b82f6;
+            --accent-glow: rgba(59, 130, 246, 0.2);
+            --text-primary: #f3f4f6;
+            --text-dim: #9ca3af;
+            --border: rgba(255, 255, 255, 0.08);
+            --user-bubble: linear-gradient(135deg, #2563eb, #3b82f6);
             
             --color-code: #7c3aed;
             --color-math: #ea580c;
@@ -29,23 +33,70 @@
 
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
-            font-family: system-ui, -apple-system, sans-serif;
-            background: var(--bg-main);
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background: #0f1115;
             color: var(--text-primary);
             height: 100vh;
             display: flex;
             overflow: hidden;
+            position: relative;
+        }
+
+        body::before {
+            content: '';
+            position: absolute;
+            top: -150px;
+            left: -150px;
+            width: 500px;
+            height: 500px;
+            background: radial-gradient(circle, rgba(59,130,246,0.3) 0%, transparent 70%);
+            border-radius: 50%;
+            z-index: 0;
+            filter: blur(40px);
+            pointer-events: none;
+        }
+
+        body::after {
+            content: '';
+            position: absolute;
+            bottom: -200px;
+            right: -100px;
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, rgba(147,51,234,0.25) 0%, transparent 70%);
+            border-radius: 50%;
+            z-index: 0;
+            filter: blur(50px);
+            pointer-events: none;
         }
 
         /* Sidebar */
         aside {
             width: 280px;
-            background: var(--bg-sidebar);
-            border-right: 1px solid var(--border);
+            background: rgba(21, 24, 30, 0.4);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border-right: 1px solid rgba(255, 255, 255, 0.05);
             display: flex;
             flex-direction: column;
             flex-shrink: 0;
             padding: 20px;
+            z-index: 10;
+            overflow-y: auto;
+        }
+
+        aside::-webkit-scrollbar {
+            width: 6px;
+        }
+        aside::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        aside::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+        }
+        aside::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.2);
         }
 
         .logo {
@@ -73,19 +124,35 @@
         .specialist-list { display: flex; flex-direction: column; gap: 12px; }
         
         .specialist-card {
-            background: #1e1e1e;
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 12px;
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            padding: 14px;
             display: flex;
             flex-direction: column;
             gap: 8px;
-            transition: all 0.2s ease;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
         }
         
         .specialist-card.active {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(59, 130, 246, 0.6);
+            box-shadow: 0 0 24px rgba(59, 130, 246, 0.4), inset 0 0 12px rgba(59, 130, 246, 0.2);
+            transform: translateY(-2px) scale(1.02);
+        }
+
+        .specialist-card:hover {
+            border-color: rgba(255, 255, 255, 0.1);
+            background: rgba(30, 34, 42, 0.6);
+        }
+        
+        .specialist-card.manual-select {
             border-color: var(--accent);
-            box-shadow: 0 0 10px rgba(0, 188, 212, 0.1);
+            box-shadow: 0 0 15px rgba(59, 130, 246, 0.3);
+            background: rgba(59, 130, 246, 0.1);
         }
 
         .specialist-card-header {
@@ -282,69 +349,305 @@
         }
         .metrics-bar span { display: flex; align-items: center; gap: 4px; }
 
-        /* Input Bar */
+        
+        /* Input Bar Redesign */
         .input-area {
-            padding: 20px;
-            background: linear-gradient(transparent, var(--bg-main) 20%);
+            padding: 24px;
+            background: linear-gradient(to top, var(--bg-main) 40%, transparent);
             border-top: 1px solid var(--border);
+            position: relative;
+            z-index: 10;
         }
-        .input-container {
-            max-width: 800px;
-            margin: 0 auto;
-            background: #252525;
-            border: 1px solid var(--border);
+        
+        .input-wrapper {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            width: 100%;
+        }
+        
+        .domain-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(59, 130, 246, 0.2);
+            border: 1px solid rgba(59, 130, 246, 0.5);
+            color: #fff;
+            padding: 4px 10px;
             border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            width: fit-content;
+            margin-bottom: 5px;
+        }
+        .domain-pill .close {
+            cursor: pointer;
+            font-size: 14px;
+            opacity: 0.7;
+        }
+        .domain-pill .close:hover {
+            opacity: 1;
+        }
+
+        .input-container {
+            background: rgba(20, 23, 28, 0.6);
+            backdrop-filter: blur(32px);
+            -webkit-backdrop-filter: blur(32px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 24px;
+            padding: 12px 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+            transition: all 0.3s ease;
+        }
+
+        .input-container:focus-within { 
+            border-color: rgba(59, 130, 246, 0.6); 
+            box-shadow: 0 0 0 3px var(--accent-glow), 0 12px 40px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255,255,255,0.05);
+            transform: translateY(-2px);
+        }
+
+        .input-row {
             display: flex;
             align-items: flex-end;
-            padding: 8px 12px;
-            transition: border-color 0.2s;
+            gap: 12px;
+            position: relative;
         }
-        .input-container:focus-within { border-color: var(--accent); }
 
         textarea {
             flex-grow: 1;
             background: transparent;
             border: none;
             color: #fff;
-            padding: 8px;
+            padding: 4px 8px;
             font-family: inherit;
             font-size: 15px;
+            line-height: 1.5;
             resize: none;
             max-height: 200px;
             outline: none;
         }
+
+        /* Buttons */
         .btn-send {
-            background: var(--accent);
-            color: #000;
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            color: #fff;
             border: none;
-            width: 32px;
-            height: 32px;
-            border-radius: 8px;
+            width: 38px;
+            height: 38px;
+            border-radius: 12px;
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
-            margin-bottom: 4px;
-            transition: transform 0.1s;
+            transition: all 0.2s;
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+            flex-shrink: 0;
         }
-        .btn-send:hover { transform: scale(1.05); }
-        .btn-send:disabled { background: #444; cursor: not-allowed; }
+        .btn-send:hover:not(:disabled) { 
+            transform: scale(1.05) translateY(-1px); 
+            box-shadow: 0 6px 16px rgba(59, 130, 246, 0.5); 
+        }
+        .btn-send:disabled { 
+            background: #2a2d35; 
+            color: #6b7280; 
+            box-shadow: none; 
+            cursor: not-allowed; 
+        }
 
         .btn-attach {
-            background: transparent;
+            background: rgba(255,255,255,0.03);
             color: var(--text-dim);
-            border: none;
-            width: 32px;
-            height: 32px;
-            border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.05);
+            width: 38px;
+            height: 38px;
+            border-radius: 12px;
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
-            margin-bottom: 4px;
+            transition: all 0.2s;
+            flex-shrink: 0;
+        }
+        .btn-attach:hover { 
+            background: rgba(255,255,255,0.1); 
+            color: #fff; 
+            border-color: rgba(255,255,255,0.2);
+        }
+
+        .btn-stop {
+            background: #ef4444;
+            color: #fff;
+            border: none;
+            width: 38px;
+            height: 38px;
+            border-radius: 12px;
+            cursor: pointer;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+        }
+
+        /* Attachment Menu - Fixed! */
+        .attachment-menu {
+            position: absolute;
+            bottom: calc(100% + 16px);
+            left: 0;
+            background: rgba(30, 33, 40, 0.95);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 14px;
+            padding: 8px;
+            display: none;
+            flex-direction: column;
+            gap: 4px;
+            min-width: 200px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(16px);
+            z-index: 100;
+            animation: slideUp 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .attachment-menu.show { display: flex; }
+        .attachment-menu button {
+            background: transparent;
+            border: none;
+            color: var(--text-primary);
+            padding: 10px 14px;
+            text-align: left;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.1s;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .attachment-menu button:hover {
+            background: rgba(255, 255, 255, 0.08);
+            color: #fff;
+        }
+
+        /* Slash Menu Updates */
+        .slash-menu {
+            position: absolute;
+            bottom: calc(100% + 16px);
+            left: 50px;
+            background: rgba(30, 33, 40, 0.95);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 16px;
+            padding: 8px;
+            display: none;
+            flex-direction: column;
+            gap: 4px;
+            min-width: 260px;
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255,255,255,0.05);
+            z-index: 100;
+            backdrop-filter: blur(20px);
+            animation: slideUp 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        
+        .slash-menu.show { display: flex; }
+        
+        .slash-menu-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: transparent;
+            border: none;
+            color: var(--text-primary);
+            padding: 10px 12px;
+            text-align: left;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.1s;
+        }
+
+        .slash-menu-item:hover, .slash-menu-item.selected {
+            background: rgba(59, 130, 246, 0.15);
+            color: #fff;
+        }
+        
+        .slash-menu-item .icon { font-size: 18px; }
+        .slash-menu-item .text { display: flex; flex-direction: column; }
+        .slash-menu-item .title { font-size: 13px; font-weight: 600; }
+        .slash-menu-item .desc { font-size: 11px; color: var(--text-dim); }
+        
+        .memory-label {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+        
+        .ios-switch {
+            position: relative;
+            width: 36px;
+            height: 20px;
+            display: inline-block;
+        }
+        
+        .ios-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        
+        .switch-track {
+            position: absolute;
+            cursor: pointer;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: rgba(255, 255, 255, 0.2);
+            transition: .3s;
+            border-radius: 20px;
+        }
+        
+        .switch-track:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 2px;
+            bottom: 2px;
+            background-color: white;
+            transition: .3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            border-radius: 50%;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        input:checked + .switch-track {
+            background-color: var(--accent);
+        }
+        
+        input:checked + .switch-track:before {
+            transform: translateX(16px);
+        }
+        .memory-toggle-wrapper {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: 100%;
+            padding: 0 4px 10px 4px;
+        }
+        
+        .memory-label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            color: var(--text-dim);
+            font-size: 13px;
+            font-weight: 500;
+            user-select: none;
             transition: color 0.2s;
         }
-        .btn-attach:hover { color: var(--accent); }
+        .memory-label:hover { color: #fff; }
+
         .image-preview-container {
             position: relative;
             display: none;
@@ -601,6 +904,57 @@
         .dot:nth-child(1) { animation-delay: -0.32s; }
         .dot:nth-child(2) { animation-delay: -0.16s; }
         @keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
+    
+        .user-image-attachment {
+            max-width: 200px;
+            border-radius: 8px;
+            cursor: zoom-in;
+            margin-bottom: 8px;
+        }
+        
+        
+
+    
+        #lightbox-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(0,0,0,0.85);
+            z-index: 100000;
+            backdrop-filter: blur(8px);
+            align-items: center;
+            justify-content: center;
+            cursor: zoom-out;
+        }
+        #lightbox-img {
+            max-width: 90vw;
+            max-height: 90vh;
+            border-radius: 8px;
+            object-fit: contain;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+            cursor: default;
+        }
+        .lightbox-close {
+            position: absolute;
+            top: 30px;
+            right: 30px;
+            background: rgba(255,255,255,0.1);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 50%;
+            width: 44px; height: 44px;
+            font-size: 28px;
+            cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            transition: all 0.2s;
+            z-index: 100001;
+        }
+        .lightbox-close:hover { 
+            background: rgba(255,82,82,0.8); 
+            border-color: #ff5252;
+            transform: scale(1.1); 
+        }
+
     </style>
 </head>
 <body>
@@ -640,37 +994,93 @@
             <!-- Messages appear here -->
         </div>
 
+        
         <div class="input-area">
-            <div class="input-container-wrapper" style="max-width: 800px; margin: 0 auto;">
+            <div class="input-wrapper">
                 <div class="image-preview-container" id="image-preview-container">
                     <img id="image-preview" src="" alt="Preview">
                     <button class="btn-remove-image" onclick="App.removeImage()">×</button>
                 </div>
-                <div class="doc-preview-container" id="doc-preview-container" style="display: none; background: #2a2a2a; padding: 6px 12px; border-radius: 4px; margin-bottom: 8px; border: 1px solid #444; width: fit-content; align-items: center; gap: 8px;">
-                    <span id="doc-preview-name" style="font-size: 14px; color: #e0e0e0;"></span>
-                    <button class="btn-remove-doc" onclick="App.removeDoc()" style="background: none; border: none; color: #ff5252; cursor: pointer; font-size: 16px; font-weight: bold; line-height: 1;">×</button>
+                <div class="doc-preview-container" id="doc-preview-container" style="display: none; background: rgba(255,255,255,0.05); padding: 8px 14px; border-radius: 12px; margin-bottom: 12px; border: 1px solid rgba(255,255,255,0.1); width: fit-content; align-items: center; gap: 10px; backdrop-filter: blur(10px);">
+                    <span id="doc-preview-name" style="font-size: 14px; font-weight: 500; color: #fff;"></span>
+                    <button class="btn-remove-doc" onclick="App.removeDoc()" style="background: rgba(255,82,82,0.2); border: none; color: #ff5252; cursor: pointer; font-size: 14px; font-weight: bold; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; transition: all 0.2s;">×</button>
                 </div>
-                <div class="input-container" style="max-width: none;">
-                    <div class="attachment-wrapper">
-                        <button class="btn-attach" onclick="UI.toggleAttachmentMenu()" title="Attach File">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
-                        </button>
-                        <div id="attachment-menu" class="attachment-menu">
-                            <button onclick="document.getElementById('doc-upload').click(); UI.toggleAttachmentMenu()">📄 Document (PDF, TXT)</button>
-                            <button onclick="document.getElementById('image-upload').click(); UI.toggleAttachmentMenu()">🖼️ Image (JPG, PNG)</button>
+
+                <div class="input-container">
+                    <div class="memory-toggle-wrapper">
+                        <span style="font-size: 12px; color: #6b7280; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">MELLM Router</span>
+                        <label class="memory-label">
+                            <div class="ios-switch">
+    <input type="checkbox" id="memory-toggle">
+    <div class="switch-track"></div>
+</div>
+                            Enable Context Memory
+                        </label>
+                    </div>
+
+                    <div class="input-row">
+                        <div class="attachment-wrapper" style="position: relative;">
+                            <button class="btn-attach" onclick="UI.toggleAttachmentMenu()" title="Attach File">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
+                            </button>
+                            <div id="attachment-menu" class="attachment-menu">
+                                <button class="slash-menu-item" onclick="document.getElementById('doc-upload').click(); UI.toggleAttachmentMenu()">
+                                    <span class="icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg></span>
+                                    <span class="text">
+                                        <span class="title">Document</span>
+                                        <span class="desc">PDF, TXT, or MD</span>
+                                    </span>
+                                </button>
+                                <button class="slash-menu-item" onclick="document.getElementById('image-upload').click(); UI.toggleAttachmentMenu()">
+                                    <span class="icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg></span>
+                                    <span class="text">
+                                        <span class="title">Image</span>
+                                        <span class="desc">JPG, PNG, WEBP</span>
+                                    </span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div id="slash-menu" class="slash-menu">
+                            <button class="slash-menu-item" onclick="UI.selectSlashCommand('doc')">
+                                <span class="icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg></span>
+                                <span class="text">
+                                    <span class="title">Upload Document</span>
+                                    <span class="desc">PDF, TXT, or MD files</span>
+                                </span>
+                            </button>
+                            <button class="slash-menu-item" onclick="UI.selectSlashCommand('image')">
+                                <span class="icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg></span>
+                                <span class="text">
+                                    <span class="title">Upload Image</span>
+                                    <span class="desc">JPG, PNG, WEBP</span>
+                                </span>
+                            </button>
+                        </div>
+                        
+                        <div id="selected-domain-pill" class="domain-pill" style="display: none;">
+                            <span id="selected-domain-text"></span>
+                            <span class="close" onclick="App.clearDomainSelection()">&times;</span>
+                        </div>
+                        
+                        <div style="display: flex; align-items: flex-end; gap: 10px; width: 100%;">
+                            <textarea id="user-input" placeholder="Ask MELLM or type '/' for commands..." rows="1"></textarea>
+                            
+                            <button id="send-btn" class="btn-send" onclick="App.sendMessage()">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                            </button>
+                            <button id="stop-btn" class="btn-stop" onclick="App.stopGeneration()">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+                            </button>
                         </div>
                     </div>
-                    <input type="file" id="doc-upload" accept=".pdf,.txt,.md" style="display: none;" onchange="App.handleDocUpload(event)">
-                    <input type="file" id="image-upload" accept="image/png, image/jpeg, image/webp" style="display: none;" onchange="App.handleImageUpload(event)">
-                    <textarea id="user-input" placeholder="Ask MELLM anything..." rows="1"></textarea>
-                    <button id="send-btn" class="btn-send" onclick="App.sendMessage()">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
-                </button>
-                <button id="stop-btn" class="btn-stop" onclick="App.stopGeneration()">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
-                </button>
+                </div>
             </div>
+            
+            <input type="file" id="doc-upload" accept=".pdf,.txt,.md" style="display: none;" onchange="App.handleDocUpload(event)">
+            <input type="file" id="image-upload" accept="image/png, image/jpeg, image/webp" style="display: none;" onchange="App.handleImageUpload(event)">
         </div>
+
     </main>
 
     <script>
@@ -678,13 +1088,13 @@
         const API = {
             activeDownloads: new Set(),
             
-            async streamQuery(prompt, imageData, callbacks, signal) {
+            async streamQuery(prompt, imageData, enableMemory, domainHint, callbacks, signal) {
                 const {onRouting, onLoaded, onToken, onMultiAgentStart, onSubAgentStart, onSubAgentLoaded, onSubAgentToken, onSubAgentDone, onDone, onError} = callbacks;
                 try {
                     const response = await fetch('/query/stream', {
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({prompt, image_data: imageData}),
+                        body: JSON.stringify({prompt, image_data: imageData, enable_memory: enableMemory, domain_hint: domainHint}),
                         signal: signal
                     });
                     
@@ -739,10 +1149,37 @@
             input: document.getElementById('user-input'),
             sendBtn: document.getElementById('send-btn'),
             stopBtn: document.getElementById('stop-btn'),
+            slashMenu: document.getElementById('slash-menu'),
 
             toggleAttachmentMenu() {
                 const menu = document.getElementById('attachment-menu');
                 menu.classList.toggle('show');
+            },
+
+            showSlashMenu() {
+                this.slashMenu.classList.add('show');
+            },
+
+            hideSlashMenu() {
+                this.slashMenu.classList.remove('show');
+            },
+
+            selectSlashCommand(type) {
+                // Remove the / text
+                const text = this.input.value;
+                const lastSlashIdx = text.lastIndexOf('/');
+                if (lastSlashIdx >= 0) {
+                    this.input.value = text.substring(0, lastSlashIdx).trim();
+                }
+                
+                this.hideSlashMenu();
+                
+                if (type === 'doc') {
+                    document.getElementById('doc-upload').click();
+                } else if (type === 'image') {
+                    document.getElementById('image-upload').click();
+                }
+                this.input.focus();
             },
 
             addUserMessage(text, imageData) {
@@ -750,7 +1187,7 @@
                 msg.className = 'message user';
                 let imgHtml = '';
                 if (imageData) {
-                    imgHtml = `<img src="data:image/jpeg;base64,${imageData}" class="user-image-attachment">`;
+                    imgHtml = `<img src="${imageData}" class="user-image-attachment" onclick="document.getElementById('lightbox-img').src=this.src; document.getElementById('lightbox-overlay').style.display='flex';" title="Click to expand">`;
                 }
                 msg.innerHTML = `<div class="bubble message-content">${imgHtml}${this.escapeHtml(text)}</div>`;
                 this.container.appendChild(msg);
@@ -888,8 +1325,9 @@
                     list.innerHTML = '';
                     for (const [domain, info] of Object.entries(status.specialists)) {
                         const card = document.createElement('div');
-                        card.className = `specialist-card ${info.active ? 'active' : ''}`;
+                        card.className = `specialist-card ${info.active ? 'active' : ''} ${App.selectedDomain === domain ? 'manual-select' : ''}`;
                         card.id = `card-${domain}`;
+                        card.setAttribute('onclick', `App.toggleDomainSelection('${domain}')`);
                         
                         const isDownloading = API.activeDownloads.has(domain);
                         
@@ -946,6 +1384,9 @@
                         if (card) {
                             if (info.active) card.classList.add('active');
                             else card.classList.remove('active');
+                            
+                            if (App.selectedDomain === domain) card.classList.add('manual-select');
+                            else card.classList.remove('manual-select');
                             
                             const indicatorSvg = card.querySelector('.domain-indicator svg');
                             if(indicatorSvg) indicatorSvg.style.opacity = info.active ? 1 : 0;
@@ -1201,11 +1642,29 @@
             lastPrompt: '',
             currentImageData: null,
             currentDocFile: null,
+            selectedDomain: null,
 
             async init() {
                 this.bindEvents();
                 await this.refreshStatus();
                 setInterval(() => this.refreshStatus(), 3000);
+            },
+            
+            toggleDomainSelection(domain) {
+                if (this.selectedDomain === domain) {
+                    this.clearDomainSelection();
+                } else {
+                    this.selectedDomain = domain;
+                    document.getElementById('selected-domain-pill').style.display = 'inline-flex';
+                    document.getElementById('selected-domain-text').textContent = `Using: ${domain}`;
+                    this.refreshStatus(); // Force UI update
+                }
+            },
+            
+            clearDomainSelection() {
+                this.selectedDomain = null;
+                document.getElementById('selected-domain-pill').style.display = 'none';
+                this.refreshStatus(); // Force UI update
             },
 
             handleDocUpload(event) {
@@ -1216,6 +1675,14 @@
                 const container = document.getElementById('doc-preview-container');
                 document.getElementById('doc-preview-name').textContent = '📄 ' + file.name;
                 container.style.display = 'flex';
+                
+                // Automatically enable context memory when a document is uploaded
+                // so the model can actually read it from the memory bank.
+                const memoryToggle = document.getElementById('memory-toggle');
+                if (memoryToggle && !memoryToggle.checked) {
+                    memoryToggle.checked = true;
+                }
+                
                 event.target.value = '';
             },
 
@@ -1246,17 +1713,77 @@
             },
 
             bindEvents() {
+                let selectedIndex = -1;
+                
                 UI.input.addEventListener('keydown', (e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
+                    const isSlashMenuVisible = UI.slashMenu.classList.contains('show');
+                    
+                    if (isSlashMenuVisible) {
+                        const items = Array.from(UI.slashMenu.querySelectorAll('.slash-menu-item')).filter(item => item.style.display !== 'none');
+                        
+                        if (e.key === 'ArrowDown') {
+                            e.preventDefault();
+                            selectedIndex = (selectedIndex + 1) % items.length;
+                            items.forEach((item, idx) => item.classList.toggle('selected', idx === selectedIndex));
+                            return;
+                        } else if (e.key === 'ArrowUp') {
+                            e.preventDefault();
+                            selectedIndex = (selectedIndex - 1 + items.length) % items.length;
+                            items.forEach((item, idx) => item.classList.toggle('selected', idx === selectedIndex));
+                            return;
+                        } else if (e.key === 'Enter' && selectedIndex >= 0) {
+                            e.preventDefault();
+                            items[selectedIndex].click();
+                            selectedIndex = -1;
+                            return;
+                        }
+                    }
+
+                    if (e.key === 'Enter' && !e.shiftKey && !isSlashMenuVisible) {
                         e.preventDefault();
-                        this.sendMessage();
+                        App.sendMessage();
                     }
                 });
 
-                // Auto-resize textarea
+                // Auto-resize textarea and slash command detection
                 UI.input.addEventListener('input', () => {
                     UI.input.style.height = 'auto';
                     UI.input.style.height = (UI.input.scrollHeight) + 'px';
+
+                    // Slash command logic
+                    const text = UI.input.value;
+                    const lastWord = text.split(' ').pop();
+                    
+                    if (lastWord.startsWith('/')) {
+                        UI.showSlashMenu();
+                        selectedIndex = -1; // Reset selection
+                        
+                        // Filter menu items
+                        const filter = lastWord.substring(1).toLowerCase();
+                        const items = UI.slashMenu.querySelectorAll('.slash-menu-item');
+                        let hasVisible = false;
+                        
+                        items.forEach(item => {
+                            const title = item.querySelector('.title').textContent.toLowerCase();
+                            if (title.includes(filter) || filter === '') {
+                                item.style.display = 'flex';
+                                hasVisible = true;
+                            } else {
+                                item.style.display = 'none';
+                            }
+                        });
+                        
+                        if (!hasVisible) {
+                            UI.hideSlashMenu();
+                        }
+                    } else {
+                        UI.hideSlashMenu();
+                    }
+                });
+                
+                // Hide menu on blur
+                UI.input.addEventListener('blur', () => {
+                    setTimeout(() => UI.hideSlashMenu(), 200); // delay to allow clicks
                 });
             },
 
@@ -1304,8 +1831,10 @@
                     // clear the bubble to prepare for actual response
                     document.getElementById(bubbleId).querySelector('.bubble').innerHTML = '<div class="typing"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>';
                 }
+                const enableMemory = document.getElementById('memory-toggle').checked;
 
-                await API.streamQuery(prompt, imageData, {
+                try {
+                    await API.streamQuery(userMsgText, imageData, enableMemory, this.selectedDomain, {
                     onRouting: (event) => {
                         UI.upgradeToBubble(bubbleId, event.domain);
                     },
@@ -1334,13 +1863,36 @@
                         this.refreshStatus();
                     },
                     onError: (err) => {
-                        if (err === 'AbortError') return; 
                         console.error("Stream error:", err);
                         const msg = document.getElementById(bubbleId);
-                        if (msg) msg.querySelector('.bubble').innerHTML = `<span style="color: #ff5252">Error: ${err}</span>`;
+                        if (msg) {
+                            if (err === 'AbortError' || (err && err.name === 'AbortError')) {
+                                const bubble = msg.querySelector('.bubble');
+                                if (bubble.innerHTML.includes('class="typing"')) {
+                                    bubble.innerHTML = '<span style="color: #888; font-style: italic;">Generation stopped.</span>';
+                                }
+                            } else {
+                                msg.querySelector('.bubble').innerHTML = `<span style="color: #ff5252">Error: ${err}</span>`;
+                            }
+                        }
                         this.finishStreaming();
                     }
                 }, this.abortController.signal);
+                } catch (e) {
+                    if (e.name === 'AbortError') {
+                        const msg = document.getElementById(bubbleId);
+                        if (msg) {
+                            const bubble = msg.querySelector('.bubble');
+                            if (bubble.innerHTML.includes('class="typing"')) {
+                                bubble.innerHTML = '<span style="color: #888; font-style: italic;">Generation stopped.</span>';
+                            }
+                        }
+                    } else {
+                        console.error("Query failed", e);
+                        document.getElementById(bubbleId).querySelector('.bubble').textContent = "❌ Error: " + e.message;
+                    }
+                    this.finishStreaming();
+                }
             },
 
             stopGeneration() {
@@ -1383,5 +1935,11 @@
 
         App.init();
     </script>
+
+    <div id="lightbox-overlay" onclick="this.style.display='none'">
+        <button class="lightbox-close">&times;</button>
+        <img id="lightbox-img" src="">
+    </div>
 </body>
+
 </html>

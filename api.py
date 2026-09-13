@@ -44,6 +44,7 @@ class QueryRequest(BaseModel):
     image_data: Optional[str] = None
     domain_hint: Optional[str] = None  # optional override: "code", "math", etc.
     stream: Optional[bool] = False
+    enable_memory: bool = True
 
 class SubResult(BaseModel):
     domain: str
@@ -71,7 +72,7 @@ async def serve_ui():
 async def query(request: QueryRequest):
     try:
         r = get_router()
-        result = r.query(request.prompt, image_data=request.image_data)
+        result = r.query(request.prompt, image_data=request.image_data, enable_memory=request.enable_memory, force_domain=request.domain_hint)
         return QueryResponse(
             domain=result["domain"],
             response=result["response"],
@@ -96,7 +97,7 @@ async def query_stream(request: QueryRequest):
     def generate():
         try:
             r = get_router()
-            for event in r.stream_query(request.prompt, image_data=request.image_data):
+            for event in r.stream_query(request.prompt, image_data=request.image_data, enable_memory=request.enable_memory, force_domain=request.domain_hint):
                 yield f"data: {json.dumps(event)}\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
